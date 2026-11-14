@@ -1,7 +1,9 @@
-import { Engine } from './engine.js';
-import { MidiInput } from './midi.js';
-import { CATEGORIES, PRESETS, PRESET_BY_ID } from './presets.js';
-import { PARAMS, DEFAULT_PARAMS, DEFAULT_GLOBALS, toNorm, fromNorm, formatParam } from './params.js';
+// The ?v= tags must match package.json "version" (see index.html), so a browser that
+// cached an older release never mixes old and new modules.
+import { Engine, PAD_TYPE_LIST } from './engine.js?v=1.2.0';
+import { MidiInput } from './midi.js?v=1.2.0';
+import { CATEGORIES, PRESETS, PRESET_BY_ID } from './presets.js?v=1.2.0';
+import { PARAMS, DEFAULT_PARAMS, DEFAULT_GLOBALS, DEFAULT_PAD, toNorm, fromNorm, formatParam } from './params.js?v=1.2.0';
 
 const STORE_KEY = 'keystage:v1';
 const PART_KEYS = ['tone', 'attack', 'release', 'motion'];
@@ -29,6 +31,7 @@ function loadState() {
     globals: { ...DEFAULT_GLOBALS },
     layer: { on: false, presetId: 'warm-strings', oct: 0 },
     key: { root: 0, mode: 'major', transpose: true, lock: false },
+    pad: { type: 'warm', ...DEFAULT_PAD },
     mappings: { ...DEFAULT_MAPPINGS },
     midiInput: 'all',
     midiChannel: 0,
@@ -41,6 +44,7 @@ function loadState() {
         globals: { ...base.globals, ...saved.globals },
         layer: { ...base.layer, ...saved.layer },
         key: { ...base.key, ...saved.key },
+        pad: { ...base.pad, ...saved.pad },
       });
     }
   } catch (e) {
@@ -78,7 +82,12 @@ const midi = new MidiInput({
 const presetParams = (id) => ({ ...DEFAULT_PARAMS, ...PRESET_BY_ID[id].params, ...(state.overrides[id] || {}) });
 const factoryParams = (id) => ({ ...DEFAULT_PARAMS, ...PRESET_BY_ID[id].params });
 const currentPreset = () => PRESET_BY_ID[state.presetId];
-const paramValue = (name) => (PARAMS[name].scope === 'global' ? state.globals[name] : presetParams(state.presetId)[name]);
+const paramValue = (name) => {
+  const scope = PARAMS[name].scope;
+  if (scope === 'global') return state.globals[name];
+  if (scope === 'pad') return state.pad[name];
+  return presetParams(state.presetId)[name];
+};
 
 function forParts(fn) {
   if (!engine.started) return;
@@ -91,7 +100,10 @@ function forParts(fn) {
 function setParam(name, value) {
   const d = PARAMS[name];
   value = clamp(value, d.min, d.max);
-  if (d.scope === 'global') {
+  if (d.scope === 'pad') {
+    state.pad[name] = value;
+    applyPadParam(name);
+  } else if (d.scope === 'global') {
     state.globals[name] = value;
     if (name === 'volume') engine.setVolume(value);
     if (name === 'layer') applyLayerLevel();
@@ -197,6 +209,8 @@ function panic() {
   $$('.key.down').forEach((k) => k.classList.remove('down'));
   sustainLatch = false;
   setSustain(false);
+  padOn = false; // engine.panic() already faded the pad out
+  renderPad();
   toast('All sound stopped');
 }
 
@@ -212,6 +226,7 @@ const ACTIONS = {
   'key-down': () => setKey({ root: (state.key.root + 11) % 12 }),
   transpose: () => setKey({ transpose: !state.key.transpose }),
   'scale-lock': () => setKey({ lock: !state.key.lock }),
+  pad: () => togglePad(),
   panic,
 };
 
@@ -220,6 +235,7 @@ function runTarget(target) {
   if (kind === 'action') ACTIONS[id]?.();
   else if (kind === 'preset') selectPreset(id);
   else if (kind === 'cat') selectCategory(id);
+  else if (kind === 'key') setKey({ root: Number(id) });
 }
 
 // ------------------------------------------------------------------ notes
@@ -279,7 +295,6 @@ function toggleSustainLatch(force) {
 
 // ------------------------------------------------------------------ key and scale
 
-const NOTE_NAMES = ['C', 'C♯/D♭', 'D', 'E♭', 'E', 'F', 'F♯/G♭', 'G', 'A♭', 'A', 'B♭', 'B'];
 const SHORT_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
 const SCALES = { major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10] };
 
@@ -327,7 +342,13 @@ function keyLabel() {
 
 function renderKey() {
   const k = state.key;
-  $('#keyRoot').value = String(k.root);
+  $('#keyName').textContent = keyLabel();
+  $$('.pad-key').forEach((b) => {
+    const on = Number(b.dataset.root) === k.root;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-pressed', String(on));
+  });
+  if (engine.started) engine.pad.setKey(k.root);
   $$('[data-key-mode]').forEach((b) => b.classList.toggle('active', b.dataset.keyMode === k.mode));
   $('#transposeBtn').setAttribute('aria-pressed', String(k.transpose));
   $('#lockBtn').setAttribute('aria-pressed', String(k.lock));
@@ -347,6 +368,69 @@ function setOctave(o) {
 }
 
 // ------------------------------------------------------------------ MIDI
+
+// ------------------------------------------------------------------ tonic pad
+
+// Key grid in the same order as a tonic pad: A to A flat, four per row.
+const PAD_KEYS = [
+  { root: 9, label: 'A' }, { root: 10, label: 'B♭' }, { root: 11, label: 'B' }, { root: 0, label: 'C' },
+  { root: 1, label: 'D♭' }, { root: 2, label: 'D' }, { root: 3, label: 'E♭' }, { root: 4, label: 'E' },
+  { root: 5, label: 'F' }, { root: 6, label: 'G♭' }, { root: 7, label: 'G' }, { root: 8, label: 'A♭' },
+];
+let padOn = false;
+
+function buildPadPanel() {
+  const grid = $('#padGrid');
+  for (const { root, label } of PAD_KEYS) {
+    const b = document.createElement('button');
+    b.className = 'pad-key';
+    b.textContent = label;
+    b.dataset.root = root;
+    b.dataset.learn = 'key:' + root;
+    b.title = `Key of ${label} (pad and transpose follow it)`;
+    b.addEventListener('click', () => setKey({ root }));
+    grid.appendChild(b);
+  }
+  const typeSel = $('#padType');
+  for (const t of PAD_TYPE_LIST) typeSel.insertAdjacentHTML('beforeend', `<option value="${t.id}">${t.label}</option>`);
+  typeSel.value = state.pad.type;
+  typeSel.addEventListener('change', () => {
+    state.pad.type = typeSel.value;
+    if (engine.started) engine.pad.setType(state.pad.type);
+    save();
+  });
+  $('#padPower').addEventListener('click', () => togglePad());
+  const fader = $('#padLevel');
+  fader.addEventListener('input', () => setParam('padLevel', Number(fader.value)));
+  fader.addEventListener('dblclick', () => setParam('padLevel', DEFAULT_PAD.padLevel));
+}
+
+function togglePad(force) {
+  if (!engine.started) return;
+  padOn = force ?? !padOn;
+  engine.pad.setOn(padOn);
+  renderPad();
+}
+
+function renderPad() {
+  $('#padPower').setAttribute('aria-pressed', String(padOn));
+  $('#padGroup').classList.toggle('on', padOn);
+  $('#lcdPad').classList.toggle('on', padOn);
+}
+
+function applyPadParam(name) {
+  if (!engine.started) return;
+  const v = state.pad[name];
+  if (name === 'padBright') engine.pad.setBrightness(v);
+  if (name === 'padShimmer') engine.pad.setShimmer(v);
+  if (name === 'padLevel') engine.pad.setLevel(v);
+}
+
+function applyPadAll() {
+  engine.pad.setType(state.pad.type);
+  engine.pad.setKey(state.key.root);
+  for (const name of ['padBright', 'padShimmer', 'padLevel']) applyPadParam(name);
+}
 
 let learning = false;
 let armed = null; // { target, el }
@@ -501,7 +585,8 @@ function targetLabel(target) {
   }
   if (kind === 'preset') return PRESET_BY_ID[id].name;
   if (kind === 'cat') return CATEGORIES.find((c) => c.id === id).label + ' bank';
-  return { 'prev-preset': 'Previous sound', 'next-preset': 'Next sound', 'prev-cat': 'Previous bank', 'next-cat': 'Next bank', tap: 'Tap tempo', layer: 'Layer on/off', panic: 'Panic', sustain: 'Sustain on/off', 'key-up': 'Key up', 'key-down': 'Key down', transpose: 'Transpose on/off', 'scale-lock': 'Scale lock on/off' }[id] || id;
+  if (kind === 'key') return 'Key ' + PAD_KEYS.find((p) => p.root === Number(id)).label;
+  return { 'prev-preset': 'Previous sound', 'next-preset': 'Next sound', 'prev-cat': 'Previous bank', 'next-cat': 'Next bank', tap: 'Tap tempo', layer: 'Layer on/off', panic: 'Panic', sustain: 'Sustain on/off', 'key-up': 'Key up', 'key-down': 'Key down', transpose: 'Transpose on/off', 'scale-lock': 'Scale lock on/off', pad: 'Tonic pad on/off' }[id] || id;
 }
 
 function renderMapBadges() {
@@ -610,6 +695,7 @@ const C = 2 * Math.PI * R;
 
 function buildKnobs() {
   for (const [name, d] of Object.entries(PARAMS)) {
+    if (d.fader) continue; // drawn as a fader in the HTML
     const container = $(`.group[data-group="${d.group}"] .knobs`);
     const wrap = document.createElement('div');
     wrap.className = 'knob-wrap';
@@ -654,7 +740,8 @@ function attachKnob(name, el) {
   el.addEventListener('dblclick', () => {
     if (learning) return;
     const d = PARAMS[name];
-    setParam(name, d.scope === 'global' ? DEFAULT_GLOBALS[name] : factoryParams(state.presetId)[name]);
+    const defaults = d.scope === 'global' ? DEFAULT_GLOBALS : d.scope === 'pad' ? DEFAULT_PAD : factoryParams(state.presetId);
+    setParam(name, defaults[name]);
   });
   el.addEventListener(
     'wheel',
@@ -677,6 +764,12 @@ function attachKnob(name, el) {
 }
 
 function updateKnob(name) {
+  if (PARAMS[name].fader) {
+    const v = paramValue(name);
+    $('#padLevel').value = String(v);
+    $('#padLevelValue').textContent = formatParam(name, v);
+    return;
+  }
   const k = knobs[name];
   if (!k) return;
   const v = paramValue(name);
@@ -790,6 +883,7 @@ function bindComputerKeys() {
       Comma: ACTIONS['key-down'],
       Period: ACTIONS['key-up'],
       Backslash: () => toggleSustainLatch(),
+      KeyQ: () => togglePad(),
     };
     if (e.code in nav) {
       e.preventDefault();
@@ -841,9 +935,7 @@ function bindUi() {
   $('#sustainBtn').addEventListener('click', () => toggleSustainLatch());
   $('#transposeBtn').addEventListener('click', ACTIONS.transpose);
   $('#lockBtn').addEventListener('click', ACTIONS['scale-lock']);
-  const keySel = $('#keyRoot');
-  NOTE_NAMES.forEach((name, i) => keySel.insertAdjacentHTML('beforeend', `<option value="${i}">${name}</option>`));
-  keySel.addEventListener('change', () => setKey({ root: Number(keySel.value) }));
+  buildPadPanel();
   $$('[data-key-mode]').forEach((b) => b.addEventListener('click', () => setKey({ mode: b.dataset.keyMode })));
   $('#layerBtn').addEventListener('click', () => toggleLayer());
   $('#layerSelect').addEventListener('change', (e) => {
@@ -931,6 +1023,7 @@ async function start() {
     if (event === 'samples-error') toast('Could not load the recorded piano; using the synthesized grand instead');
   });
   engine.loadSamples('piano');
+  applyPadAll();
   applyMain();
   applyLayer();
   meterLoop();

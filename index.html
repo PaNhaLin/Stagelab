@@ -7,7 +7,8 @@
   <title>Keystage</title>
   <meta name="description" content="A stage keyboard workstation in the browser: pianos, electric pianos, organs, pads, synths and leads with live effects and MIDI learn.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161c'/%3E%3Crect x='6' y='8' width='5' height='16' rx='1' fill='%23ff8a3d'/%3E%3Crect x='13.5' y='8' width='5' height='16' rx='1' fill='%23ece7df'/%3E%3Crect x='21' y='8' width='5' height='16' rx='1' fill='%23ece7df'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="styles.css">
+  <!-- ?v= must match package.json "version", so browsers never mix old and new files after an update -->
+  <link rel="stylesheet" href="styles.css?v=1.2.0">
 </head>
 <body>
   <header class="topbar">
@@ -50,6 +51,7 @@
             <span id="lcdBpm">160 BPM</span>
             <span id="lcdOct">OCT 0</span>
             <span id="lcdSus" class="lcd-flag">SUS</span>
+            <span id="lcdPad" class="lcd-flag">PAD</span>
           </span>
         </div>
       </div>
@@ -82,6 +84,26 @@
         <h2>Master</h2>
         <div class="knobs"></div>
       </div>
+      <div class="group group-pad" data-group="pad" id="padGroup">
+        <h2 class="pad-head">
+          <button class="pad-power" id="padPower" data-learn="action:pad" aria-pressed="false" title="Tonic pad on/off (Q)" aria-label="Tonic pad on or off">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/></svg>
+          </button>
+          <span class="pad-title">
+            <span class="pad-kicker">Tonic Pad</span>
+            <label class="sr" for="padType">Pad sound</label>
+            <select id="padType" class="pad-type"></select>
+          </span>
+        </h2>
+        <div class="pad-body">
+          <div class="pad-grid" id="padGrid" role="group" aria-label="Key"></div>
+          <div class="knobs pad-knobs"></div>
+          <div class="pad-fader" data-learn="param:padLevel">
+            <input type="range" id="padLevel" min="-40" max="6" step="0.5" aria-label="Pad level">
+            <span class="knob-value" id="padLevelValue"></span>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section class="layerbar" aria-label="Performance">
@@ -96,10 +118,7 @@
       <span class="bar-divider" aria-hidden="true"></span>
       <div class="key-controls" role="group" aria-label="Key">
         <span class="bar-label">Key</span>
-        <button class="btn btn-small btn-step" data-learn="action:key-down" data-action="key-down" title="Key down a semitone (comma)" aria-label="Key down a semitone">−</button>
-        <label class="sr" for="keyRoot">Key</label>
-        <select id="keyRoot" class="select select-key"></select>
-        <button class="btn btn-small btn-step" data-learn="action:key-up" data-action="key-up" title="Key up a semitone (period)" aria-label="Key up a semitone">+</button>
+        <span class="key-name" id="keyName" title="Choose the key on the Tonic Pad grid, or with , and .">C</span>
         <div class="seg" role="group" aria-label="Major or minor">
           <button class="seg-btn" data-key-mode="major">Major</button>
           <button class="seg-btn" data-key-mode="minor">Minor</button>
@@ -135,6 +154,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/main.js"></script>
+  <script type="module" src="js/main.js?v=1.2.0"></script>
 </body>
 </html>

@@ -53,6 +53,35 @@ function toMonoBestChannel(ctx, buf) {
   return mono;
 }
 
+// Synthetic hall impulse: decaying stereo noise that darkens over time.
+function makeImpulse(ctx, seconds) {
+  const sr = ctx.sampleRate;
+  const len = Math.floor(sr * seconds);
+  const pre = Math.floor(sr * 0.012);
+  const buf = ctx.createBuffer(2, len + pre, sr);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    let lp = 0;
+    for (let i = 0; i < len; i++) {
+      const t = i / len;
+      const env = Math.pow(1 - t, 2.2) * Math.exp(-3 * t);
+      const k = 0.55 - 0.45 * t; // one-pole lowpass gets darker towards the tail
+      lp += k * (Math.random() * 2 - 1 - lp);
+      d[i + pre] = lp * env;
+    }
+  }
+  // normalise so long and short rooms are roughly equally loud
+  let sum = 0;
+  const d0 = buf.getChannelData(0);
+  for (let i = 0; i < d0.length; i++) sum += d0[i] * d0[i];
+  const norm = 0.9 / Math.sqrt(sum / 20 + 1e-9);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    for (let i = 0; i < d.length; i++) d[i] *= norm;
+  }
+  return buf;
+}
+
 function smooth(param, value, ctx, tau = 0.02) {
   param.setTargetAtTime(value, ctx.currentTime, tau);
 }
@@ -136,6 +165,7 @@ export class Engine {
     this.limiter.connect(ctx.destination);
 
     this.parts = { main: new Part(this, 'main'), layer: new Part(this, 'layer') };
+    this.pad = new TonicPad(this);
     this.setReverbSize(2.5, true);
     if (!offlineCtx && ctx.state !== 'running') await ctx.resume();
   }
@@ -209,32 +239,7 @@ export class Engine {
     this.reverbSize = seconds;
     clearTimeout(this._revTimer);
     const build = () => {
-      const ctx = this.ctx;
-      const sr = ctx.sampleRate;
-      const len = Math.floor(sr * seconds);
-      const pre = Math.floor(sr * 0.012);
-      const buf = ctx.createBuffer(2, len + pre, sr);
-      for (let ch = 0; ch < 2; ch++) {
-        const d = buf.getChannelData(ch);
-        let lp = 0;
-        for (let i = 0; i < len; i++) {
-          const t = i / len;
-          const env = Math.pow(1 - t, 2.2) * Math.exp(-3 * t);
-          const k = 0.55 - 0.45 * t; // one-pole lowpass gets darker towards the tail
-          lp += k * (Math.random() * 2 - 1 - lp);
-          d[i + pre] = lp * env;
-        }
-      }
-      // normalise so long and short rooms are roughly equally loud
-      let sum = 0;
-      const d0 = buf.getChannelData(0);
-      for (let i = 0; i < d0.length; i++) sum += d0[i] * d0[i];
-      const norm = 0.9 / Math.sqrt(sum / 20 + 1e-9);
-      for (let ch = 0; ch < 2; ch++) {
-        const d = buf.getChannelData(ch);
-        for (let i = 0; i < d.length; i++) d[i] *= norm;
-      }
-      this.convolver.buffer = buf;
+      this.convolver.buffer = makeImpulse(this.ctx, seconds);
     };
     if (immediate) build();
     else this._revTimer = setTimeout(build, 120);
@@ -275,6 +280,7 @@ export class Engine {
   panic() {
     if (!this.ctx) return;
     for (const p of Object.values(this.parts)) p.allNotesOff(true);
+    this.pad.setOn(false, 0.15);
     // clear echo and reverb tails
     const t = this.ctx.currentTime;
     for (const gNode of [this.revSend, this.dlySend, this.dlyFb]) {
@@ -926,4 +932,182 @@ function buildOsc(part, note, f, vel, t) {
   };
   const maxDur = (env.s ?? 1) === 0 ? a + (env.d ?? 1) * 3 + 0.5 : undefined;
   return { amp, out: amp, sources, pitch, setFreq, maxDur };
+}
+
+// ---------------------------------------------------------------- tonic pad
+
+// Pad flavours for the tonic pad. Each note of the drone is built from these oscillators.
+const PAD_TYPES = {
+  warm: { label: 'Warm Pad', oscs: [{ type: 'sawtooth', unison: 3, spread: 14 }, { type: 'triangle', oct: -1, gain: 0.5 }], q: 0.7, sub: 0.5, level: 0.41 },
+  air: { label: 'Air Pad', oscs: [{ type: 'triangle', unison: 3, spread: 9 }, { type: 'sine', oct: 1, gain: 0.35 }], q: 0.4, sub: 0.25, level: 0.4 },
+  strings: { label: 'Soft Strings', oscs: [{ type: 'sawtooth', unison: 5, spread: 24 }], q: 0.5, sub: 0.3, level: 0.55 },
+  dark: { label: 'Dark Drone', oscs: [{ type: 'sawtooth', unison: 2, spread: 8 }, { type: 'square', oct: -1, gain: 0.45 }], q: 1.4, sub: 0.8, level: 0.43 },
+};
+export const PAD_TYPE_LIST = Object.entries(PAD_TYPES).map(([id, t]) => ({ id, label: t.label }));
+
+const dbToGain = (db) => (db <= -40 ? 0 : Math.pow(10, db / 20));
+
+// A sustained drone on the key's root: sub octave, root, fifth and octave (no third, so it
+// fits both major and minor). It has its own long reverb so it does not change with the
+// selected sound, and changing key crossfades smoothly to the new root.
+class TonicPad {
+  constructor(engine) {
+    this.engine = engine;
+    const ctx = (this.ctx = engine.ctx);
+    const g = (v) => {
+      const n = ctx.createGain();
+      n.gain.value = v;
+      return n;
+    };
+    this.on = false;
+    this.root = 0;
+    this.type = 'warm';
+    this.chord = null;
+
+    this.filter = ctx.createBiquadFilter();
+    this.filter.type = 'lowpass';
+    this.filter.frequency.value = 2500;
+    this.power = g(0); // on/off fade
+    this.level = g(dbToGain(-5)); // fader
+    this.shimmerBus = g(1);
+    const shimmerHp = ctx.createBiquadFilter();
+    shimmerHp.type = 'highpass';
+    shimmerHp.frequency.value = 900;
+
+    // slow filter drift so the pad breathes
+    this.drift = ctx.createOscillator();
+    this.drift.frequency.value = 0.06;
+    const driftDepth = g(250); // cents
+    this.drift.connect(driftDepth).connect(this.filter.detune);
+    this.drift.start();
+
+    this.reverb = ctx.createConvolver();
+    this.reverb.buffer = makeImpulse(ctx, 7);
+    const dry = g(0.55);
+    const wet = g(0.9);
+    // gentle low cut so the sub octave never turns into PA rumble
+    const lowCut = ctx.createBiquadFilter();
+    lowCut.type = 'highpass';
+    lowCut.frequency.value = 40;
+    lowCut.Q.value = 0.6;
+    this.filter.connect(lowCut).connect(this.power);
+    this.shimmerBus.connect(shimmerHp).connect(this.power);
+    this.power.connect(this.level);
+    this.level.connect(dry).connect(engine.bus);
+    this.level.connect(this.reverb).connect(wet).connect(engine.bus);
+    this.shimmer = 0.17;
+  }
+
+  // Build one drone chord for a root; returns its fade gains and sources.
+  buildChord(root, type, fadeIn) {
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const def = PAD_TYPES[type];
+    const base = 48 + (((root % 12) + 12) % 12); // root between C3 and B3
+    const main = ctx.createGain();
+    const shim = ctx.createGain();
+    main.gain.setValueAtTime(0, t);
+    main.gain.linearRampToValueAtTime(1, t + fadeIn);
+    shim.gain.setValueAtTime(0, t);
+    shim.gain.linearRampToValueAtTime(1, t + fadeIn);
+    main.connect(this.filter);
+    shim.connect(this.shimmerBus);
+    const sources = [];
+    const voice = (note, gain, dest, spec) => {
+      const count = spec.unison || 1;
+      const vg = ctx.createGain();
+      vg.gain.value = (gain * (spec.gain ?? 1)) / Math.sqrt(count);
+      vg.connect(dest);
+      for (let i = 0; i < count; i++) {
+        const o = ctx.createOscillator();
+        o.type = spec.type;
+        o.frequency.value = mtof(note + 12 * (spec.oct || 0));
+        const spread = count > 1 ? (spec.spread || 0) * ((i / (count - 1)) * 2 - 1) : 0;
+        o.detune.value = spread;
+        const p = ctx.createStereoPanner();
+        p.pan.value = count > 1 ? ((i / (count - 1)) * 2 - 1) * 0.8 : 0;
+        o.connect(p).connect(vg);
+        o.start(t);
+        sources.push(o);
+      }
+    };
+    const L = def.level;
+    for (const spec of def.oscs) {
+      voice(base - 12, L * def.sub, main, spec); // sub
+      voice(base, L, main, spec); // root
+      voice(base + 7, L * 0.7, main, spec); // fifth
+      voice(base + 12, L * 0.55, main, spec); // octave
+    }
+    // shimmer: soft sines two and three octaves up, plus a high fifth
+    const shimGain = ctx.createGain();
+    shimGain.gain.value = this.shimmer;
+    shimGain.connect(shim);
+    for (const [n, gn] of [[base + 24, 0.5], [base + 31, 0.3], [base + 36, 0.25]]) {
+      voice(n, gn * 1.25, shimGain, { type: 'sine', unison: 2, spread: 6 });
+    }
+    return { main, shim, shimGain, sources };
+  }
+
+  fadeOutChord(chord, seconds) {
+    if (!chord) return;
+    const t = this.ctx.currentTime;
+    for (const gNode of [chord.main, chord.shim]) {
+      holdAt(gNode.gain, t);
+      gNode.gain.linearRampToValueAtTime(0, t + seconds);
+    }
+    for (const s of chord.sources) s.stop(t + seconds + 0.1);
+    setTimeout(() => {
+      chord.main.disconnect();
+      chord.shim.disconnect();
+    }, (seconds + 0.3) * 1000);
+  }
+
+  // Swap to a new chord with a crossfade (used for key and type changes).
+  crossfade(seconds = 2.5) {
+    const old = this.chord;
+    this.chord = this.buildChord(this.root, this.type, old ? seconds : 0.05);
+    this.fadeOutChord(old, seconds);
+  }
+
+  setOn(on, seconds) {
+    const t = this.ctx.currentTime;
+    this.on = on;
+    holdAt(this.power.gain, t);
+    if (on) {
+      if (!this.chord) this.chord = this.buildChord(this.root, this.type, 0.05);
+      this.power.gain.linearRampToValueAtTime(1, t + (seconds ?? 2.5));
+    } else {
+      const fade = seconds ?? 3;
+      this.power.gain.linearRampToValueAtTime(0, t + fade);
+      const chord = this.chord;
+      this.chord = null;
+      this.fadeOutChord(chord, fade);
+    }
+  }
+
+  setKey(root) {
+    if (root === this.root) return;
+    this.root = root;
+    if (this.on) this.crossfade(2.5);
+  }
+
+  setType(type) {
+    if (!PAD_TYPES[type] || type === this.type) return;
+    this.type = type;
+    this.filter.Q.value = PAD_TYPES[type].q;
+    if (this.on) this.crossfade(1.5);
+  }
+
+  setBrightness(n) {
+    smooth(this.filter.frequency, 250 * Math.pow(8000 / 250, clamp(n, 0, 1)), this.ctx, 0.05);
+  }
+
+  setShimmer(n) {
+    this.shimmer = clamp(n, 0, 1);
+    if (this.chord) smooth(this.chord.shimGain.gain, this.shimmer, this.ctx, 0.05);
+  }
+
+  setLevel(db) {
+    smooth(this.level.gain, dbToGain(db), this.ctx, 0.05);
+  }
 }

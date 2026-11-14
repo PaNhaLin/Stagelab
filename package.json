@@ -1,7 +1,7 @@
 {
   "name": "keystage",
   "productName": "Keystage",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Stage keyboard workstation: pianos, electric pianos, organs, pads, synths and leads with live effects and MIDI learn.",
   "main": "electron/main.js",
   "private": true,

@@ -40,7 +40,7 @@ npm run dist
 
 ### Releasing a new version
 
-1. Raise `version` in `package.json` (for example `1.0.1`) and push.
+1. Raise `version` in `package.json` (for example `1.2.1`). Also change every `?v=` tag to the same number: two in `index.html` and four imports at the top of `js/main.js`. These tags make browsers load all of the new files together instead of mixing them with cached old ones. Then push.
 2. On GitHub, draft a new release with the matching tag (`v1.0.1`) and save it as a draft.
 3. In the **Actions** tab, run **Build Windows release**. GitHub builds the installer and portable exe and attaches them to that draft.
 4. Open the draft and click **Publish release**.
@@ -73,6 +73,7 @@ Then open <http://localhost:5173> in **Chrome or Edge** (Web MIDI is not availab
 | `Space` | Sustain while held |
 | `\` | Sustain button on/off (latched) |
 | `,` / `.` | Key down / up a semitone |
+| `Q` | Tonic pad on/off |
 | `Z` / `X` | Octave down / up |
 | `←` `→` | Previous / next sound |
 | `↑` `↓` or `1`–`7` | Change bank |
@@ -82,7 +83,15 @@ Then open <http://localhost:5173> in **Chrome or Edge** (Web MIDI is not availab
 
 **Sustain button:** holds every note until you press it again, for players without a pedal. The pedal and `Space` still work; notes are held while either is on.
 
-**Key, Transpose and Scale lock:** pick a key (C to B) and Major or Minor.
+**Tonic Pad:** an ambient drone that holds the key under everything you play, for worship sets, intros and transitions.
+- The power button fades the pad in or out over a few seconds.
+- The **12-key grid** (A to A♭) chooses the key. It is the same key used by Transpose and Scale lock, so the pad and your playing always agree. Changing key crossfades the pad smoothly.
+- Click the pad name to choose **Warm Pad**, **Air Pad**, **Soft Strings** or **Dark Drone**.
+- **Brightness** opens the pad's filter, **Shimmer** adds a soft layer one and two octaves up, and the fader sets the pad's level (double-click resets it to −5 dB).
+- The pad plays root, fifth and octave with no third, so it fits both major and minor keys. It has its own long reverb, so it doesn't change when you switch sounds.
+- Every grid key, the power button, both knobs and the fader can be assigned with MIDI Learn. Panic also stops the pad.
+
+**Key, Transpose and Scale lock:** pick a key on the Tonic Pad grid (or with `,` and `.`) and choose Major or Minor.
 - **Transpose** (on by default): play C major or A minor shapes and hear the chosen key, so G major sounds when you play in C, and E minor when you play in A minor. The shift stays within −6 to +5 semitones.
 - **Scale lock:** a note outside the key moves down a semitone to the nearest note in the key, so wrong notes can't happen.
 - The on-screen keyboard marks the notes of the key you are playing in, with an orange dot on the root. The display shows the key and the transpose amount, for example `KEY G (−5)`.

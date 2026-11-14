@@ -15,7 +15,12 @@ export const PARAMS = {
   feedback: { label: 'Feedback', group: 'delay',  scope: 'fx',     min: 0,     max: 0.9,   curve: 'lin', unit: '%' },
   volume:   { label: 'Volume',   group: 'master', scope: 'global', min: 0,     max: 1,     curve: 'lin', unit: '%' },
   layer:    { label: 'Layer',    group: 'master', scope: 'global', min: 0,     max: 1,     curve: 'lin', unit: '%' },
+  padBright:  { label: 'Brightness', group: 'pad', scope: 'pad', min: 0,   max: 1, curve: 'lin', unit: '%' },
+  padShimmer: { label: 'Shimmer',    group: 'pad', scope: 'pad', min: 0,   max: 1, curve: 'lin', unit: '%' },
+  padLevel:   { label: 'Level',      group: 'pad', scope: 'pad', min: -40, max: 6, curve: 'lin', unit: 'db', fader: true },
 };
+
+export const DEFAULT_PAD = { padBright: 0.65, padShimmer: 0.17, padLevel: -5 };
 
 export const DEFAULT_PARAMS = {
   tone: 20000, attack: 0.002, release: 0.3, motion: 0,
@@ -48,6 +53,8 @@ export function formatParam(name, value) {
       return value < 1 ? Math.round(value * 1000) + ' ms' : value.toFixed(1) + ' s';
     case 'ms':
       return Math.round(value * 1000) + ' ms';
+    case 'db':
+      return value <= -40 ? 'Off' : (value > 0 ? '+' : '') + (Math.round(value * 2) / 2) + ' dB';
     default:
       return Math.round(((value - d.min) / (d.max - d.min)) * 100) + '%';
   }
