@@ -1,5 +1,8 @@
 # Keystage
 
+**▶ Play it online: https://panhalin.github.io/Stagelab/** (Chrome or Edge, with or without a MIDI keyboard)
+**⬇ Windows app: [download from Releases](https://github.com/PaNhaLin/Stagelab/releases/latest)**
+
 A stage keyboard workstation that runs in the browser. Plug in a USB/MIDI keyboard, open the page, and play pianos, electric pianos, organs, pads, synths and leads, with live control over tone, envelope, motion, reverb and delay.
 
 Every sound is synthesized in real time with the Web Audio API. There are no samples to download or license, no build step and no dependencies, so it also works offline.
