@@ -38,6 +38,15 @@ npm start
 npm run dist
 ```
 
+### Releasing a new version
+
+1. Raise `version` in `package.json` (for example `1.0.1`) and push.
+2. On GitHub, draft a new release with the matching tag (`v1.0.1`) and save it as a draft.
+3. In the **Actions** tab, run **Build Windows release**. GitHub builds the installer and portable exe and attaches them to that draft.
+4. Open the draft and click **Publish release**.
+
+The web version on GitHub Pages updates by itself a minute after every push to `main`.
+
 `npm start` runs the app from source. `npm run dist` rebuilds the installer and portable exe in `dist/`. To change the icon, edit `build/make-icon.mjs` and run `npm run icon`.
 
 ## Run it in a browser
