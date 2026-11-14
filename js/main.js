@@ -1032,6 +1032,28 @@ async function start() {
 
 // ------------------------------------------------------------------ boot
 
+// A browser may still have the page from an older release cached while loading this newer
+// script (GitHub Pages lets browsers keep pages for 10 minutes). The page carries its version;
+// if it doesn't match, reload once to fetch the matching page instead of failing.
+const VERSION = '1.2.0';
+const pageVersion = document.querySelector('meta[name="keystage-version"]')?.content;
+if (pageVersion !== VERSION) {
+  let reloaded = false;
+  try {
+    reloaded = sessionStorage.getItem('keystage-reload') === VERSION;
+    sessionStorage.setItem('keystage-reload', VERSION);
+  } catch (e) {
+    /* storage blocked: still try one reload below */
+  }
+  if (!reloaded) location.reload();
+  throw new Error(`Keystage ${VERSION} script loaded with a ${pageVersion || 'pre-1.2.0'} page; reloading for the matching page.`);
+}
+try {
+  sessionStorage.removeItem('keystage-reload');
+} catch (e) {
+  /* ignore */
+}
+
 // The desktop app (Electron) is allowed to play sound without a click, so skip the start screen.
 const isDesktop = /\bElectron\//.test(navigator.userAgent);
 if (isDesktop) {

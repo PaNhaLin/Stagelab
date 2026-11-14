@@ -40,7 +40,7 @@ npm run dist
 
 ### Releasing a new version
 
-1. Raise `version` in `package.json` (for example `1.2.1`). Also change every `?v=` tag to the same number: two in `index.html` and four imports at the top of `js/main.js`. These tags make browsers load all of the new files together instead of mixing them with cached old ones. Then push.
+1. Raise `version` in `package.json` (for example `1.2.1`). Also change the version everywhere it appears: the `keystage-version` meta tag and the two `?v=` tags in `index.html`, and `VERSION` plus the four `?v=` imports in `js/main.js`. These tags make browsers load all of the new files together instead of mixing them with cached old ones. Then push.
 2. On GitHub, draft a new release with the matching tag (`v1.0.1`) and save it as a draft.
 3. In the **Actions** tab, run **Build Windows release**. GitHub builds the installer and portable exe and attaches them to that draft.
 4. Open the draft and click **Publish release**.
