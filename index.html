@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Keystage</title>
+  <meta name="description" content="A stage keyboard workstation in the browser: pianos, electric pianos, organs, pads, synths and leads with live effects and MIDI learn.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314161c'/%3E%3Crect x='6' y='8' width='5' height='16' rx='1' fill='%23ff8a3d'/%3E%3Crect x='13.5' y='8' width='5' height='16' rx='1' fill='%23ece7df'/%3E%3Crect x='21' y='8' width='5' height='16' rx='1' fill='%23ece7df'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">Keystage</span>
+    </div>
+    <div class="midi-box">
+      <span class="midi-led" id="midiLed" title="MIDI activity" aria-hidden="true"></span>
+      <label class="sr" for="midiInput">MIDI input</label>
+      <select id="midiInput" class="select" title="MIDI input">
+        <option value="all">All MIDI inputs</option>
+      </select>
+      <label class="sr" for="midiChannel">MIDI channel</label>
+      <select id="midiChannel" class="select select-sm" title="MIDI channel">
+        <option value="0">Omni</option>
+      </select>
+      <span class="midi-status" id="midiStatus">MIDI off</span>
+    </div>
+    <div class="topbar-right">
+      <div class="meter" title="Output level" aria-hidden="true"><div class="meter-fill" id="meterFill"></div></div>
+      <span class="voices" id="voiceCount" title="Voices playing">0 v</span>
+      <button class="btn btn-learn" id="learnBtn" aria-pressed="false">MIDI Learn</button>
+      <button class="btn btn-panic" id="panicBtn" data-learn="action:panic" title="Stop all sound (Esc)">Panic</button>
+    </div>
+  </header>
+
+  <main class="rack">
+    <section class="display" aria-live="polite">
+      <div class="lcd">
+        <div class="lcd-top">
+          <span id="lcdCat">PIANO</span>
+          <span id="lcdNum">P-01</span>
+        </div>
+        <div class="lcd-name" id="lcdName">Concert Grand</div>
+        <div class="lcd-bottom">
+          <span id="lcdLayer">Layer off</span>
+          <span class="lcd-tags">
+            <span id="lcdBpm">160 BPM</span>
+            <span id="lcdOct">OCT 0</span>
+            <span id="lcdSus" class="lcd-flag">SUS</span>
+          </span>
+        </div>
+      </div>
+      <div class="nav-buttons">
+        <button class="btn btn-nav" data-learn="action:prev-preset" data-action="prev-preset" title="Previous sound (←)">◀ Sound</button>
+        <button class="btn btn-nav" data-learn="action:next-preset" data-action="next-preset" title="Next sound (→)">Sound ▶</button>
+        <button class="btn btn-nav" data-learn="action:prev-cat" data-action="prev-cat" title="Previous category (↑)">▲ Bank</button>
+        <button class="btn btn-nav" data-learn="action:next-cat" data-action="next-cat" title="Next category (↓)">Bank ▼</button>
+      </div>
+    </section>
+
+    <section class="categories" id="categories" aria-label="Sound categories"></section>
+    <section class="presets" id="presets" aria-label="Sounds"></section>
+
+    <section class="controls" aria-label="Controls">
+      <div class="group" data-group="sound">
+        <h2>Sound <button class="link-btn" id="resetSound" title="Restore this sound's factory settings">reset</button></h2>
+        <div class="knobs"></div>
+      </div>
+      <div class="group" data-group="reverb">
+        <h2>Reverb</h2>
+        <div class="knobs"></div>
+      </div>
+      <div class="group" data-group="delay">
+        <h2>Delay</h2>
+        <div class="knobs"></div>
+        <button class="btn btn-tap" id="tapBtn" data-learn="action:tap" title="Tap tempo for the delay (B)">Tap</button>
+      </div>
+      <div class="group" data-group="master">
+        <h2>Master</h2>
+        <div class="knobs"></div>
+      </div>
+    </section>
+
+    <section class="layerbar" aria-label="Layer">
+      <button class="btn btn-toggle" id="layerBtn" data-learn="action:layer" aria-pressed="false" title="Play a second sound together with the main sound (M)">Layer</button>
+      <label class="sr" for="layerSelect">Layer sound</label>
+      <select id="layerSelect" class="select"></select>
+      <div class="seg" role="group" aria-label="Layer octave">
+        <button class="seg-btn" data-layer-oct="-1">−1 oct</button>
+        <button class="seg-btn" data-layer-oct="0">0</button>
+        <button class="seg-btn" data-layer-oct="1">+1 oct</button>
+      </div>
+      <span class="learn-hint" id="learnHint"></span>
+      <button class="link-btn" id="unmapBtn" hidden>Remove mapping</button>
+      <button class="link-btn" id="clearMapsBtn" hidden>Clear all mappings</button>
+    </section>
+
+    <section class="keyboard-wrap" aria-label="Keyboard">
+      <div class="kb-controls">
+        <button class="btn btn-small" id="octDown" title="Octave down (Z)">Oct −</button>
+        <button class="btn btn-small" id="octUp" title="Octave up (X)">Oct +</button>
+        <span class="kb-help">Play with your MIDI keyboard, the mouse, or your computer keys: <kbd>A</kbd>–<kbd>;</kbd> white keys, <kbd>W</kbd> <kbd>E</kbd> <kbd>T</kbd> <kbd>Y</kbd> <kbd>U</kbd> <kbd>O</kbd> <kbd>P</kbd> black keys, <kbd>Space</kbd> sustain.</span>
+      </div>
+      <div class="keyboard" id="keyboard"></div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <div class="start" id="start">
+    <div class="start-card">
+      <div class="brand big"><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Keystage</span></div>
+      <p>Stage keyboard workstation. Plug in a MIDI keyboard, then start.</p>
+      <button class="btn btn-start" id="startBtn">Start</button>
+      <p class="start-note">Browsers need one click before they are allowed to play sound.</p>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

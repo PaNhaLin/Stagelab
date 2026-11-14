@@ -1,0 +1,64 @@
+{
+  "name": "keystage",
+  "productName": "Keystage",
+  "version": "1.0.0",
+  "description": "Stage keyboard workstation: pianos, electric pianos, organs, pads, synths and leads with live effects and MIDI learn.",
+  "main": "electron/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "web": "python -m http.server 5173 --bind 127.0.0.1",
+    "icon": "node build/make-icon.mjs",
+    "dist": "electron-builder --win",
+    "dist:portable": "electron-builder --win portable"
+  },
+  "build": {
+    "appId": "app.keystage.desktop",
+    "productName": "Keystage",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "index.html",
+      "styles.css",
+      "js/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Keystage",
+      "artifactName": "Keystage-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Keystage-Portable-${version}.${ext}"
+    }
+  },
+  "devDependencies": {
+    "electron": "45.3.2",
+    "electron-builder": "26.18.0"
+  },
+  "license": "MIT",
+  "author": "PaNhaLin"
+}
