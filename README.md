@@ -4,6 +4,8 @@ A stage keyboard workstation that runs in the browser. Plug in a USB/MIDI keyboa
 
 Every sound is synthesized in real time with the Web Audio API. There are no samples to download or license, no build step and no dependencies, so it also works offline.
 
+> Keystage is an independent open-source project. It is not affiliated with, endorsed by, or derived from StageLab by Dede Albano or Apple MainStage.
+
 ## Windows desktop app
 
 Keystage also ships as a Windows app (built with Electron, which bundles its own Chrome engine, so Web Audio and Web MIDI behave exactly as in Chrome).
