@@ -1,0 +1,28 @@
+# Builds the Windows installer and portable exe on GitHub's Windows machines and
+# attaches them to the draft release whose tag matches package.json's version
+# (for example v1.0.0). Run it from the Actions tab with "Run workflow".
+name: Build Windows release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write # needed to upload files to the release
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build and attach to the draft release
+        run: npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
