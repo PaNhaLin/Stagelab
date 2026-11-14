@@ -28,6 +28,7 @@ function loadState() {
     overrides: {},
     globals: { ...DEFAULT_GLOBALS },
     layer: { on: false, presetId: 'warm-strings', oct: 0 },
+    key: { root: 0, mode: 'major', transpose: true, lock: false },
     mappings: { ...DEFAULT_MAPPINGS },
     midiInput: 'all',
     midiChannel: 0,
@@ -39,6 +40,7 @@ function loadState() {
       Object.assign(base, saved, {
         globals: { ...base.globals, ...saved.globals },
         layer: { ...base.layer, ...saved.layer },
+        key: { ...base.key, ...saved.key },
       });
     }
   } catch (e) {
@@ -193,6 +195,7 @@ function panic() {
   held.clear();
   keyCounts.clear();
   $$('.key.down').forEach((k) => k.classList.remove('down'));
+  sustainLatch = false;
   setSustain(false);
   toast('All sound stopped');
 }
@@ -204,6 +207,11 @@ const ACTIONS = {
   'next-cat': () => stepCategory(1),
   tap: tapTempo,
   layer: () => toggleLayer(),
+  sustain: () => toggleSustainLatch(),
+  'key-up': () => setKey({ root: (state.key.root + 1) % 12 }),
+  'key-down': () => setKey({ root: (state.key.root + 11) % 12 }),
+  transpose: () => setKey({ transpose: !state.key.transpose }),
+  'scale-lock': () => setKey({ lock: !state.key.lock }),
   panic,
 };
 
@@ -223,7 +231,8 @@ function noteOn(key, vel, src) {
   if (!engine.started) return;
   const id = src + ':' + key;
   if (held.has(id)) noteOff(key, src);
-  const sent = key + 12 * state.octave;
+  const sent = lockToScale(key) + keyShift() + 12 * state.octave;
+  if (sent < 0 || sent > 127) return;
   held.set(id, sent);
   engine.parts.main.noteOn(sent, vel);
   if (state.layer.on) engine.parts.layer.noteOn(sent, vel);
@@ -247,11 +256,88 @@ function markKey(key, delta) {
   if (el) el.classList.toggle('down', n > 0);
 }
 
-let sustainOn = false;
-function setSustain(on) {
-  sustainOn = on;
+// Sustain comes from two places: the pedal / Space key (held) and the on-screen button (latched).
+// Notes are held while either one is on.
+let sustainPedal = false;
+let sustainLatch = false;
+function applySustain() {
+  const on = sustainPedal || sustainLatch;
   forParts((p) => p.setSustain(on));
   $('#lcdSus').classList.toggle('on', on);
+  $('#sustainBtn').setAttribute('aria-pressed', String(sustainLatch));
+}
+
+function setSustain(on) {
+  sustainPedal = on;
+  applySustain();
+}
+
+function toggleSustainLatch(force) {
+  sustainLatch = force ?? !sustainLatch;
+  applySustain();
+}
+
+// ------------------------------------------------------------------ key and scale
+
+const NOTE_NAMES = ['C', 'C♯/D♭', 'D', 'E♭', 'E', 'F', 'F♯/G♭', 'G', 'A♭', 'A', 'B♭', 'B'];
+const SHORT_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
+const SCALES = { major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10] };
+
+// Transpose: you play C major (or A minor) shapes and hear the chosen key.
+// The shift is kept within -6..+5 semitones so the keyboard never jumps far.
+function keyShift() {
+  const k = state.key;
+  if (!k.transpose) return 0;
+  const s = k.mode === 'major' ? k.root : k.root - 9;
+  return ((((s + 6) % 12) + 12) % 12) - 6;
+}
+
+// The tonic and scale of the keys you physically play. With Transpose on that is
+// always C major / A minor; with it off it is the chosen key itself.
+function playedTonic() {
+  const k = state.key;
+  if (k.transpose) return k.mode === 'major' ? 0 : 9;
+  return k.root;
+}
+
+function playedScale() {
+  const t = playedTonic();
+  return SCALES[state.key.mode].map((i) => (t + i) % 12);
+}
+
+// Scale lock: a note outside the key moves down a semitone to the nearest note in it.
+// (In major and natural minor scales both neighbours of an outside note are in the scale.)
+function lockToScale(n) {
+  if (!state.key.lock) return n;
+  const pcs = playedScale();
+  return pcs.includes(((n % 12) + 12) % 12) ? n : n - 1;
+}
+
+// Notes already held keep the pitch they started with; their note-off uses that same pitch.
+function setKey(changes) {
+  Object.assign(state.key, changes);
+  renderKey();
+  save();
+}
+
+function keyLabel() {
+  const k = state.key;
+  return SHORT_NAMES[k.root] + (k.mode === 'minor' ? 'm' : '');
+}
+
+function renderKey() {
+  const k = state.key;
+  $('#keyRoot').value = String(k.root);
+  $$('[data-key-mode]').forEach((b) => b.classList.toggle('active', b.dataset.keyMode === k.mode));
+  $('#transposeBtn').setAttribute('aria-pressed', String(k.transpose));
+  $('#lockBtn').setAttribute('aria-pressed', String(k.lock));
+  const pcs = playedScale();
+  const tonic = playedTonic();
+  for (const [n, el] of keyEls) {
+    el.classList.toggle('in-scale', pcs.includes(n % 12) && n % 12 !== tonic);
+    el.classList.toggle('scale-root', n % 12 === tonic);
+  }
+  updateLcd();
 }
 
 function setOctave(o) {
@@ -415,7 +501,7 @@ function targetLabel(target) {
   }
   if (kind === 'preset') return PRESET_BY_ID[id].name;
   if (kind === 'cat') return CATEGORIES.find((c) => c.id === id).label + ' bank';
-  return { 'prev-preset': 'Previous sound', 'next-preset': 'Next sound', 'prev-cat': 'Previous bank', 'next-cat': 'Next bank', tap: 'Tap tempo', layer: 'Layer on/off', panic: 'Panic' }[id] || id;
+  return { 'prev-preset': 'Previous sound', 'next-preset': 'Next sound', 'prev-cat': 'Previous bank', 'next-cat': 'Next bank', tap: 'Tap tempo', layer: 'Layer on/off', panic: 'Panic', sustain: 'Sustain on/off', 'key-up': 'Key up', 'key-down': 'Key down', transpose: 'Transpose on/off', 'scale-lock': 'Scale lock on/off' }[id] || id;
 }
 
 function renderMapBadges() {
@@ -470,7 +556,8 @@ function renderPresets() {
       b.dataset.learn = 'preset:' + p.id;
       b.innerHTML = `<span class="num">P-${String(i + 1).padStart(2, '0')}</span><span class="name"></span><span class="tag"></span>`;
       b.querySelector('.name').textContent = p.name;
-      b.querySelector('.tag').textContent = p.voice.mono ? 'Mono · glide' : p.engine === 'organ' ? 'Mod wheel: rotary speed' : '';
+      b.querySelector('.tag').textContent =
+        p.engine === 'sample' ? 'Recorded piano' : p.voice.mono ? 'Mono · glide' : p.engine === 'organ' ? 'Mod wheel: rotary speed' : '';
       b.addEventListener('click', () => selectPreset(p.id));
       wrap.appendChild(b);
     });
@@ -510,6 +597,9 @@ function updateLcd() {
     : 'Layer off';
   $('#lcdBpm').textContent = Math.round(60 / paramValue('time')) + ' BPM';
   $('#lcdOct').textContent = 'OCT ' + (state.octave > 0 ? '+' : '') + state.octave;
+  const shift = keyShift();
+  $('#lcdKey').textContent =
+    'KEY ' + keyLabel() + (shift ? ` (${shift > 0 ? '+' : ''}${shift})` : '') + (state.key.lock ? ' LOCK' : '');
 }
 
 // ------------------------------------------------------------------ UI: knobs
@@ -697,11 +787,14 @@ function bindComputerKeys() {
       KeyX: () => setOctave(state.octave + 1),
       KeyB: tapTempo,
       KeyM: () => toggleLayer(),
+      Comma: ACTIONS['key-down'],
+      Period: ACTIONS['key-up'],
+      Backslash: () => toggleSustainLatch(),
     };
     if (e.code in nav) {
       e.preventDefault();
       nav[e.code]();
-    } else if (/^Digit[1-6]$/.test(e.code)) {
+    } else if (/^Digit[1-7]$/.test(e.code)) {
       selectCategory(CATEGORIES[Number(e.code.slice(5)) - 1].id);
     }
   });
@@ -745,6 +838,13 @@ function bindUi() {
   $$('[data-action]').forEach((b) => b.addEventListener('click', () => ACTIONS[b.dataset.action]()));
   $('#panicBtn').addEventListener('click', panic);
   $('#tapBtn').addEventListener('click', tapTempo);
+  $('#sustainBtn').addEventListener('click', () => toggleSustainLatch());
+  $('#transposeBtn').addEventListener('click', ACTIONS.transpose);
+  $('#lockBtn').addEventListener('click', ACTIONS['scale-lock']);
+  const keySel = $('#keyRoot');
+  NOTE_NAMES.forEach((name, i) => keySel.insertAdjacentHTML('beforeend', `<option value="${i}">${name}</option>`));
+  keySel.addEventListener('change', () => setKey({ root: Number(keySel.value) }));
+  $$('[data-key-mode]').forEach((b) => b.addEventListener('click', () => setKey({ mode: b.dataset.keyMode })));
   $('#layerBtn').addEventListener('click', () => toggleLayer());
   $('#layerSelect').addEventListener('change', (e) => {
     state.layer.presetId = e.target.value;
@@ -825,6 +925,12 @@ async function start() {
   }
   $('#start').classList.add('hidden');
   engine.setVolume(state.globals.volume);
+  // the recorded piano is about 2 MB; start loading it straight away
+  engine.listeners.add((event, name, err) => {
+    if (event === 'samples-ready' && currentPreset().voice.set === name) toast('Recorded piano ready');
+    if (event === 'samples-error') toast('Could not load the recorded piano; using the synthesized grand instead');
+  });
+  engine.loadSamples('piano');
   applyMain();
   applyLayer();
   meterLoop();
@@ -847,6 +953,7 @@ bindUi();
 bindComputerKeys();
 applyMain();
 applyLayer();
+renderKey();
 if (isDesktop) {
   // fall back to the start screen if audio could not start on its own
   start().then(() => {

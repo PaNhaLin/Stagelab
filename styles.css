@@ -150,7 +150,7 @@ kbd {
 .nav-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-content: center; }
 .btn-nav { min-width: 110px; padding: 12px 14px; font-weight: 600; }
 
-.categories { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.categories { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
 .cat {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -238,6 +238,30 @@ kbd {
 .seg-btn + .seg-btn { border-left: 1px solid var(--line); }
 .seg-btn.active { background: #3a3f4d; color: var(--text); font-weight: 600; }
 .learn-hint { margin-left: auto; color: var(--learn); font-size: 13px; }
+.layer-select { max-width: 170px; }
+.bar-divider { width: 1px; height: 26px; background: var(--line); }
+.bar-label { font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.key-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.select-key { max-width: 84px; padding-right: 24px; font-weight: 600; }
+.btn-step { min-width: 30px; padding: 4px 8px; font-weight: 700; }
+.btn-sustain { font-weight: 700; letter-spacing: 0.06em; min-width: 104px; }
+.btn-sustain[aria-pressed="true"] { background: #36c98f; border-color: #36c98f; color: #04140d; }
+#lcdKey { color: var(--lcd-text); }
+
+/* scale marks on the on-screen keyboard */
+.key.in-scale::before, .key.scale-root::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  width: 6px; height: 6px;
+  margin-left: -3px;
+  border-radius: 50%;
+  background: #b8b1a4;
+  pointer-events: none;
+}
+.key.black.in-scale::before { bottom: 10px; background: #5b5f6b; }
+.key.scale-root::before { background: var(--accent); width: 8px; height: 8px; margin-left: -4px; }
 
 /* ---------- keyboard ---------- */
 .keyboard-wrap { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px 12px; }

@@ -1,0 +1,16 @@
+Piano samples
+=============
+
+The files in this folder (A0.mp3 ... C8.mp3) are from the
+Salamander Grand Piano by Alexander Holm, a recording of a Yamaha C5 grand piano.
+
+License: Creative Commons Attribution 3.0 (CC BY 3.0)
+https://creativecommons.org/licenses/by/3.0/
+
+These MP3 versions (one velocity layer, one note every minor third from A0 to C8)
+were taken from the Tone.js audio collection:
+https://tonejs.github.io/audio/salamander/
+
+Keystage plays them back pitch-shifted, filtered by velocity, and mixed with its own
+effects. The samples are not covered by Keystage's MIT license; they remain under
+CC BY 3.0 as stated above.

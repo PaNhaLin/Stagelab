@@ -68,15 +68,24 @@ Then open <http://localhost:5173> in **Chrome or Edge** (Web MIDI is not availab
 | Mod wheel (CC 1) | Vibrato; on organs it switches the rotary speaker slow/fast |
 | Expression pedal (CC 11) | Volume swells |
 | Pitch bend | ±2 semitones |
-| Program change | Selects sound 1–24 |
+| Program change | Selects sound 1–30 |
 | Computer keys `A`–`'` / `W E T Y U O P` | White / black keys from middle C |
-| `Space` | Sustain |
+| `Space` | Sustain while held |
+| `\` | Sustain button on/off (latched) |
+| `,` / `.` | Key down / up a semitone |
 | `Z` / `X` | Octave down / up |
 | `←` `→` | Previous / next sound |
-| `↑` `↓` or `1`–`6` | Change bank |
+| `↑` `↓` or `1`–`7` | Change bank |
 | `B` | Tap tempo for the delay |
 | `M` | Layer on/off |
-| `Esc` | Panic (stops all sound) |
+| `Esc` | Panic (stops all sound and turns Sustain off) |
+
+**Sustain button:** holds every note until you press it again, for players without a pedal. The pedal and `Space` still work; notes are held while either is on.
+
+**Key, Transpose and Scale lock:** pick a key (C to B) and Major or Minor.
+- **Transpose** (on by default): play C major or A minor shapes and hear the chosen key, so G major sounds when you play in C, and E minor when you play in A minor. The shift stays within −6 to +5 semitones.
+- **Scale lock:** a note outside the key moves down a semitone to the nearest note in the key, so wrong notes can't happen.
+- The on-screen keyboard marks the notes of the key you are playing in, with an orange dot on the root. The display shows the key and the transpose amount, for example `KEY G (−5)`.
 
 Knobs: drag up/down (hold `Shift` for fine control), use the mouse wheel or arrow keys, or double-click to return to the sound's default.
 
@@ -84,12 +93,17 @@ Knobs: drag up/down (hold `Shift` for fine control), use the mouse wheel or arro
 
 | Bank | Sounds |
 | --- | --- |
-| Piano | Concert Grand, Bright Stage Grand, Felt Piano, Upright Ballad |
+| Piano | **Recorded Grand** (real piano recordings), Concert Grand, Bright Stage Grand, Felt Piano, Upright Ballad |
 | E.Piano | Suitcase EP, Tine Bell EP, Reed EP, Glass FM EP |
 | Organ | Gospel Full, Jazz Perc, Soft Worship Organ, Church Pipe |
 | Pads | Ambient Swell, Warm Strings, Shimmer Pad, Air Choir, Cinematic Low |
 | Synth | Super Stack, Analog Poly, Pluck Keys, Synth Brass |
 | Lead | Saw Lead, Square Lead, Soft Sine Lead, Bright Stack Lead (mono, with glide) |
+| Stage | Stage Grand (recorded, brighter for a band mix), Stage EP, Stage Clav, Stage Organ |
+
+The Stage bank holds original sounds in the style of a gigging stage keyboard. They are made by Keystage itself and contain no samples or sounds from any keyboard manufacturer.
+
+**Recorded Grand** and **Stage Grand** use 30 recordings of a real grand piano (about 2 MB, loaded when Keystage starts). Each note uses the recording that picked it up best, so it stays full on mono PAs and monitors. Until the recordings have loaded, these two sounds play the synthesized Concert Grand.
 
 Each sound remembers its own knob settings, including reverb and delay. **reset** restores the factory values.
 
@@ -115,6 +129,7 @@ js/engine.js      audio engine: voices, parts, reverb, ping-pong delay, limiter
 js/presets.js     the sound library
 js/params.js      knob ranges and formatting
 js/midi.js        Web MIDI input
+samples/piano/    recorded piano notes (CC BY 3.0, see CREDITS.txt)
 electron/main.js  Windows desktop shell (window, MIDI permission, app:// file serving)
 build/            app icon and its generator
 package.json      Electron + installer settings
@@ -122,4 +137,8 @@ package.json      Electron + installer settings
 
 ### Adding a sound
 
-Add an entry to `PRESETS` in `js/presets.js`. Pick an `engine` (`piano`, `fm`, `organ` or `osc`), copy a similar preset's `voice` block and adjust it, and set the default knob values in `params`.
+Add an entry to `PRESETS` in `js/presets.js`. Pick an `engine` (`piano`, `fm`, `organ`, `osc` or `sample`), copy a similar preset's `voice` block and adjust it, and set the default knob values in `params`.
+
+## Credits
+
+- Piano recordings: **Salamander Grand Piano** by Alexander Holm, licensed under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). The MP3 versions come from the [Tone.js audio collection](https://tonejs.github.io/audio/salamander/). See `samples/piano/CREDITS.txt`. The recordings are not covered by Keystage's MIT license.

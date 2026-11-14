@@ -5,6 +5,19 @@
 //  fxIn -> reverb send -> convolver ------------------------------------->  bus -> expression -> master -> limiter -> out
 //  fxIn -> delay send -> ping-pong delay (filtered feedback) ------------/
 
+// Recorded sample sets. Piano: Salamander Grand Piano by Alexander Holm (CC BY 3.0),
+// one recording every minor third from A0 (21) to C8 (108). See samples/piano/CREDITS.txt.
+const SAMPLE_SETS = {
+  piano: {
+    base: 'samples/piano/',
+    notes: Array.from({ length: 30 }, (_, i) => {
+      const note = 21 + i * 3;
+      const name = { 9: 'A', 0: 'C', 3: 'Ds', 6: 'Fs' }[note % 12];
+      return [name + (Math.floor(note / 12) - 1), note];
+    }),
+  },
+};
+
 const MAX_VOICES = 32;       // sounding (not releasing) voices per part
 const MAX_TOTAL = 56;        // including voices in their release tail
 
@@ -19,6 +32,25 @@ function holdAt(param, t) {
     param.cancelScheduledValues(t);
     param.setValueAtTime(v, t);
   }
+}
+
+// The piano was recorded with two spaced microphones. On some notes the two channels are
+// almost opposite in phase, so summing them to mono (as many PAs and monitors do) nearly
+// cancels the note. Keep only the channel that picked the note up best; Keystage adds its
+// own stereo placement and reverb afterwards, so the sound stays wide but mono-safe.
+function toMonoBestChannel(ctx, buf) {
+  if (buf.numberOfChannels < 2) return buf;
+  const n = Math.min(buf.length, Math.floor(buf.sampleRate * 0.5));
+  const energy = (d) => {
+    let s = 0;
+    for (let i = 0; i < n; i++) s += d[i] * d[i];
+    return s;
+  };
+  const L = buf.getChannelData(0);
+  const R = buf.getChannelData(1);
+  const mono = ctx.createBuffer(1, buf.length, buf.sampleRate);
+  mono.copyToChannel(energy(L) >= energy(R) ? L : R, 0);
+  return mono;
 }
 
 function smooth(param, value, ctx, tau = 0.02) {
@@ -106,6 +138,61 @@ export class Engine {
     this.parts = { main: new Part(this, 'main'), layer: new Part(this, 'layer') };
     this.setReverbSize(2.5, true);
     if (!offlineCtx && ctx.state !== 'running') await ctx.resume();
+  }
+
+  // Loads a recorded sample set once per audio context. Safe to call repeatedly.
+  loadSamples(name) {
+    this.samples ||= {};
+    if (this.samples[name]) return this.samples[name].promise;
+    const def = SAMPLE_SETS[name];
+    const set = { ready: false, buffers: new Map(), notes: def.notes.map((n) => n[1]) };
+    set.promise = Promise.all(
+      def.notes.map(async ([file, note]) => {
+        const res = await fetch(def.base + file + '.mp3');
+        if (!res.ok) throw new Error(`${file}.mp3: HTTP ${res.status}`);
+        const data = await res.arrayBuffer();
+        set.buffers.set(note, toMonoBestChannel(this.ctx, await this.ctx.decodeAudioData(data)));
+      }),
+    ).then(
+      () => {
+        // The recordings were not made at one level. Measure each one's loudest 50 ms in
+        // its first half second and even them out, keeping a gentle natural taper towards
+        // the top of the keyboard (-0.3 dB per octave above middle C).
+        const loud = new Map();
+        for (const [note, buf] of set.buffers) {
+          const d = buf.getChannelData(0);
+          const win = Math.floor(buf.sampleRate * 0.05);
+          const end = Math.min(d.length, Math.floor(buf.sampleRate * 0.5));
+          let max = 0;
+          for (let i = 0; i + win <= end; i += win >> 1) {
+            let s = 0;
+            for (let j = i; j < i + win; j++) s += d[j] * d[j];
+            max = Math.max(max, s / win);
+          }
+          loud.set(note, Math.sqrt(max) || 1e-4);
+        }
+        const sorted = [...loud.values()].sort((a, b) => a - b);
+        const median = sorted[sorted.length >> 1];
+        set.gains = new Map();
+        for (const [note, rms] of loud) {
+          const taper = Math.pow(10, (-0.3 * Math.max(0, (note - 60) / 12)) / 20);
+          set.gains.set(note, Math.min(4, Math.max(0.25, (median / rms) * taper)));
+        }
+        set.ready = true;
+        this.listeners.forEach((fn) => fn('samples-ready', name));
+      },
+      (err) => {
+        delete this.samples[name]; // allow a retry later
+        this.listeners.forEach((fn) => fn('samples-error', name, err));
+      },
+    );
+    this.samples[name] = set;
+    return set.promise;
+  }
+
+  sampleSet(name) {
+    const set = this.samples?.[name];
+    return set?.ready ? set : null;
   }
 
   makeNoise(seconds) {
@@ -268,6 +355,7 @@ class Part {
   setPreset(preset, params) {
     if (this.preset && this.preset.id !== preset.id) this.allNotesOff(false);
     this.preset = preset;
+    if (preset.engine === 'sample') this.engine.loadSamples(preset.voice.set);
     this.monoStack = [];
     this.monoVoice = null;
     for (const [k, v] of Object.entries(params)) this.setParam(k, v);
@@ -437,7 +525,7 @@ class Part {
   build(note, vel) {
     const t = this.ctx.currentTime + 0.003;
     const f = mtof(note);
-    const builders = { piano: buildPiano, fm: buildFM, organ: buildOrgan, osc: buildOsc };
+    const builders = { piano: buildPiano, fm: buildFM, organ: buildOrgan, osc: buildOsc, sample: buildSample };
     const parts = builders[this.preset.engine](this, note, f, vel, t);
     const voice = new Voice(this, note, parts);
     return voice;
@@ -548,11 +636,12 @@ function stringPartials({ count = 32, rolloff = 1.1, strike = 0.125 }) {
 
 // Stacked-partial piano: bright at the strike, darkening and decaying over time.
 // Velocity controls both loudness and how far the lowpass opens, like a real hammer.
-function buildPiano(part, note, f, vel, t) {
+function buildPiano(part, note, f, vel, t, voiceOverride) {
   const ctx = part.ctx;
-  const v = part.preset.voice;
+  const v = voiceOverride || part.preset.voice;
   const P = part.params;
-  const wave = part.wave(part.preset.id, () => periodic(ctx, Array.isArray(v.partials) ? v.partials : stringPartials(v.partials)));
+  const waveKey = part.preset.id + (voiceOverride ? ':fallback' : '');
+  const wave = part.wave(waveKey, () => periodic(ctx, Array.isArray(v.partials) ? v.partials : stringPartials(v.partials)));
   const vb = Math.pow(vel, 1.2) * (v.bright ?? 1); // brightness
   const amp = ctx.createGain();
   amp.gain.value = 0;
@@ -580,7 +669,16 @@ function buildPiano(part, note, f, vel, t) {
     sources.push(o);
     pitch.push(o.detune);
   }
-  filt.connect(amp);
+  if (v.hp) {
+    // thin, nasal pickup tone (used by the clavinet-style sound)
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = clamp(f * v.hp, 60, 4000);
+    hp.Q.value = 0.9;
+    filt.connect(hp).connect(amp);
+  } else {
+    filt.connect(amp);
+  }
   if (v.hammer) {
     sources.push(noiseBurst(part, t, f * (v.hammerFreq ?? 4), 0.9, v.hammer * (0.2 + vv) * 0.5, 0.012, amp));
   }
@@ -595,6 +693,54 @@ function buildPiano(part, note, f, vel, t) {
   amp.gain.setTargetAtTime(0, t + a + 0.3, decay / 4);
   amp.connect(panner);
   return { amp, out: panner, sources, pitch, maxDur: a + 0.3 + decay * 1.6 };
+}
+
+// Recorded piano: nearest recording (at most 1.5 semitones away), retuned to the played note.
+// The recordings have a single velocity layer, so softer playing is shaped with a lowpass
+// that closes down and a steeper volume curve, like a hammer hitting the string more gently.
+const FALLBACK_PIANO = { partials: { count: 32, rolloff: 1.15, strike: 0.125 }, unison: [-1.5, 1.5], bright: 1.25, hammer: 0.35, decay: 7, body: 0.5, level: 0.32 };
+
+function buildSample(part, note, f, vel, t) {
+  const ctx = part.ctx;
+  const v = part.preset.voice;
+  const P = part.params;
+  const set = part.engine.sampleSet(v.set);
+  if (!set) return buildPiano(part, note, f, vel, t, FALLBACK_PIANO); // still loading
+
+  const nearest = set.notes.reduce((best, n) => (Math.abs(n - note) < Math.abs(best - note) ? n : best), set.notes[0]);
+  const buffer = set.buffers.get(nearest);
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  src.playbackRate.value = Math.pow(2, (note - nearest) / 12);
+
+  const vb = Math.pow(vel, 1.2) * (v.bright ?? 1);
+  const filt = ctx.createBiquadFilter();
+  filt.type = 'lowpass';
+  filt.Q.value = 0.3;
+  filt.frequency.value = clamp(f * (3 + 30 * vb) + 2500 * vb, 500, 20000);
+
+  let head = filt;
+  if (v.shelf) {
+    const shelf = ctx.createBiquadFilter();
+    shelf.type = 'highshelf';
+    shelf.frequency.value = 3200;
+    shelf.gain.value = v.shelf;
+    filt.connect(shelf);
+    head = shelf;
+  }
+  const amp = ctx.createGain();
+  const panner = ctx.createStereoPanner();
+  panner.pan.value = clamp(((note - 64) / 48) * 0.5, -0.55, 0.55);
+  src.connect(filt);
+  head.connect(amp).connect(panner);
+
+  const norm = set.gains?.get(nearest) ?? 1;
+  const peak = (v.level ?? 0.8) * norm * (0.05 + 0.95 * Math.pow(vel, 1.8)) * keyTilt(v, f);
+  const a = P.attack ?? 0.002;
+  amp.gain.setValueAtTime(0, t);
+  amp.gain.linearRampToValueAtTime(peak, t + a);
+  src.start(t);
+  return { amp, out: panner, sources: [src], pitch: [src.detune], maxDur: buffer.duration / src.playbackRate.value + 0.1 };
 }
 
 // Two-operator FM electric piano with a short high-ratio "tine" modulator for the attack.

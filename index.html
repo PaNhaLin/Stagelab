@@ -46,6 +46,7 @@
         <div class="lcd-bottom">
           <span id="lcdLayer">Layer off</span>
           <span class="lcd-tags">
+            <span id="lcdKey">KEY C</span>
             <span id="lcdBpm">160 BPM</span>
             <span id="lcdOct">OCT 0</span>
             <span id="lcdSus" class="lcd-flag">SUS</span>
@@ -83,15 +84,31 @@
       </div>
     </section>
 
-    <section class="layerbar" aria-label="Layer">
+    <section class="layerbar" aria-label="Performance">
       <button class="btn btn-toggle" id="layerBtn" data-learn="action:layer" aria-pressed="false" title="Play a second sound together with the main sound (M)">Layer</button>
       <label class="sr" for="layerSelect">Layer sound</label>
-      <select id="layerSelect" class="select"></select>
+      <select id="layerSelect" class="select layer-select"></select>
       <div class="seg" role="group" aria-label="Layer octave">
-        <button class="seg-btn" data-layer-oct="-1">−1 oct</button>
+        <button class="seg-btn" data-layer-oct="-1">−1</button>
         <button class="seg-btn" data-layer-oct="0">0</button>
-        <button class="seg-btn" data-layer-oct="1">+1 oct</button>
+        <button class="seg-btn" data-layer-oct="1">+1</button>
       </div>
+      <span class="bar-divider" aria-hidden="true"></span>
+      <div class="key-controls" role="group" aria-label="Key">
+        <span class="bar-label">Key</span>
+        <button class="btn btn-small btn-step" data-learn="action:key-down" data-action="key-down" title="Key down a semitone (comma)" aria-label="Key down a semitone">−</button>
+        <label class="sr" for="keyRoot">Key</label>
+        <select id="keyRoot" class="select select-key"></select>
+        <button class="btn btn-small btn-step" data-learn="action:key-up" data-action="key-up" title="Key up a semitone (period)" aria-label="Key up a semitone">+</button>
+        <div class="seg" role="group" aria-label="Major or minor">
+          <button class="seg-btn" data-key-mode="major">Major</button>
+          <button class="seg-btn" data-key-mode="minor">Minor</button>
+        </div>
+        <button class="btn btn-toggle btn-small" id="transposeBtn" data-learn="action:transpose" aria-pressed="true" title="Play in C major / A minor and hear the chosen key">Transpose</button>
+        <button class="btn btn-toggle btn-small" id="lockBtn" data-learn="action:scale-lock" aria-pressed="false" title="Notes outside the key snap to the nearest note in the key">Scale lock</button>
+      </div>
+      <span class="bar-divider" aria-hidden="true"></span>
+      <button class="btn btn-toggle btn-sustain" id="sustainBtn" data-learn="action:sustain" aria-pressed="false" title="Hold all notes until you press it again (the sustain pedal and Space still work too)">Sustain</button>
       <span class="learn-hint" id="learnHint"></span>
       <button class="link-btn" id="unmapBtn" hidden>Remove mapping</button>
       <button class="link-btn" id="clearMapsBtn" hidden>Clear all mappings</button>

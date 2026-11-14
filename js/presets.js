@@ -13,11 +13,18 @@ export const CATEGORIES = [
   { id: 'pad', label: 'Pads' },
   { id: 'synth', label: 'Synth' },
   { id: 'lead', label: 'Lead' },
+  { id: 'stage', label: 'Stage' },
 ];
 
 // partials: { count, rolloff (higher = darker), strike (hammer position along the string) }
 export const PRESETS = [
   // ---------------- Piano ----------------
+  {
+    // recorded grand piano (Salamander Grand Piano, CC BY 3.0, see samples/piano/CREDITS.txt)
+    id: 'recorded-grand', name: 'Recorded Grand', cat: 'piano', engine: 'sample',
+    voice: { set: 'piano', bright: 1, level: 1.45 },
+    params: { release: 0.45, reverb: 0.22, size: 2.6 },
+  },
   {
     id: 'concert-grand', name: 'Concert Grand', cat: 'piano', engine: 'piano',
     voice: { partials: { count: 32, rolloff: 1.15, strike: 0.125 }, unison: [-1.5, 1.5], bright: 1.25, hammer: 0.35, decay: 7, body: 0.5, level: 0.32 },
@@ -207,5 +214,31 @@ export const PRESETS = [
     params: { attack: 0.004, release: 0.25, reverb: 0.22, size: 2.4, delay: 0.2, time: 0.375, feedback: 0.3 },
   },
 ];
+
+// ---------------- Stage ----------------
+// Original sounds in the style of a gigging stage keyboard: punchy, bright and quick to cut
+// through a band mix. Built from Keystage's own engines and the recorded grand.
+PRESETS.push(
+  {
+    id: 'stage-grand-rec', name: 'Stage Grand', cat: 'stage', engine: 'sample',
+    voice: { set: 'piano', bright: 1.35, shelf: 4, level: 1.5 },
+    params: { release: 0.3, reverb: 0.14, size: 1.6 },
+  },
+  {
+    id: 'stage-ep', name: 'Stage EP', cat: 'stage', engine: 'fm',
+    voice: { ratio: 1, index: 2.6, indexSustain: 0.25, indexDecay: 0.35, tine: { ratio: 14, index: 1.0, decay: 0.05 }, decay: 4.5, body: 0.68, level: 0.31, motionMode: 'pan', motionRate: 5.2 },
+    params: { release: 0.22, motion: 0.4, reverb: 0.16, size: 1.8 },
+  },
+  {
+    id: 'stage-clav', name: 'Stage Clav', cat: 'stage', engine: 'piano',
+    voice: { partials: { count: 32, rolloff: 0.7, strike: 0.04 }, unison: [0], bright: 1.8, hp: 1.6, hammer: 0.25, hammerFreq: 6, decay: 1.6, body: 0.45, level: 1.05 },
+    params: { release: 0.07, reverb: 0.06, size: 1.2 },
+  },
+  {
+    id: 'stage-organ', name: 'Stage Organ', cat: 'stage', engine: 'organ',
+    voice: { drawbars: [8, 8, 6, 8, 0, 0, 0, 0, 6], click: 0.7, perc: { harm: 2, level: 0.8, decay: 0.2 }, level: 0.26, motionMode: 'leslie' },
+    params: { attack: 0.003, release: 0.03, motion: 0.75, reverb: 0.12, size: 1.6 },
+  },
+);
 
 export const PRESET_BY_ID = Object.fromEntries(PRESETS.map((p) => [p.id, p]));
